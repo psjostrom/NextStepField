@@ -18,6 +18,11 @@ class NextStepFieldView extends WatchUi.DataField {
     hidden var mStepCounts as Dictionary = {};
     hidden var mPrevCurrentName as String = "";
 
+    // Fuel flash (visual only — StepField owns vibrate/tone)
+    hidden const FUEL_INTERVAL_MS = 600000; // 10 min
+    hidden var mLastFuelAlert as Number = 0;
+    hidden var mFuelFlashUntil as Number = 0;
+
     function initialize() {
         DataField.initialize();
     }
@@ -37,6 +42,8 @@ class NextStepFieldView extends WatchUi.DataField {
         mStepTotals = {};
         mStepCounts = {};
         mPrevCurrentName = "";
+        mLastFuelAlert = 0;
+        mFuelFlashUntil = 0;
     }
 
     hidden function fetchStepTotals() as Void {
@@ -165,7 +172,16 @@ class NextStepFieldView extends WatchUi.DataField {
                 mDuration = "";
             }
 
-            mColor = intensityColor(stepInfo.intensity);
+            mColor = intensityColor(stepInfo.intensity, mStepName);
+
+            // Fuel flash tracking (visual only — no vibrate/tone)
+            if (info.timerTime != null) {
+                var now = toNum(info.timerTime);
+                if (now - mLastFuelAlert >= FUEL_INTERVAL_MS) {
+                    mLastFuelAlert = now;
+                    mFuelFlashUntil = now + 5000;
+                }
+            }
         } catch (ex instanceof Lang.Exception) {
             mHasStep = false;
         }
@@ -183,6 +199,23 @@ class NextStepFieldView extends WatchUi.DataField {
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
             dc.drawText(cx, h / 2,
                 Graphics.FONT_TINY, "No next step",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+
+        // Flash "FUEL" for 5 seconds after alert
+        var showFuel = false;
+        try {
+            var ai = Activity.getActivityInfo();
+            if (ai != null && ai.timerTime != null && mFuelFlashUntil > 0) {
+                showFuel = toNum(ai.timerTime) < mFuelFlashUntil;
+            }
+        } catch (ex4) {}
+
+        if (showFuel) {
+            dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, h / 2,
+                Graphics.FONT_LARGE, "FUEL",
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             return;
         }
@@ -226,7 +259,8 @@ class NextStepFieldView extends WatchUi.DataField {
         return meters.toNumber() + "m";
     }
 
-    hidden function intensityColor(intensity) as Number {
+    hidden function intensityColor(intensity, name as String) as Number {
+        if (name.find("EASY") != null || name.find("DOWNHILL") != null) { return 0x00CCFF; }
         var i = toNum(intensity);
         if (i == 2 || i == 3) { return 0x55FF55; }
         if (i == 1 || i == 4) { return 0x00CCFF; }
