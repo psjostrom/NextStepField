@@ -1,4 +1,5 @@
 import Toybox.Activity;
+import Toybox.Communications;
 import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.WatchUi;
@@ -11,8 +12,55 @@ class NextStepFieldView extends WatchUi.DataField {
     hidden var mColor as Number = 0xFFFFFF;
     hidden var mHasStep as Boolean = false;
 
+    // Rep tracking — we track CURRENT step transitions to count reps,
+    // then display the NEXT step's upcoming rep number.
+    hidden var mStepTotals as Dictionary = {};
+    hidden var mStepCounts as Dictionary = {};
+    hidden var mPrevCurrentName as String = "";
+
     function initialize() {
         DataField.initialize();
+    }
+
+    function onTimerStart() as Void {
+        fetchStepTotals();
+    }
+
+    function onTimerResume() as Void {
+        if (mStepTotals.isEmpty()) {
+            fetchStepTotals();
+        }
+    }
+
+    function onTimerReset() as Void {
+        mHasStep = false;
+        mStepTotals = {};
+        mStepCounts = {};
+        mPrevCurrentName = "";
+    }
+
+    hidden function fetchStepTotals() as Void {
+        var url = Secrets.SPRINGA_URL;
+        var secret = Secrets.SPRINGA_SECRET;
+        if (url.equals("") || secret.equals("")) { return; }
+
+        Communications.makeWebRequest(
+            url + "/api/workout-steps",
+            null,
+            {
+                :method => Communications.HTTP_REQUEST_METHOD_GET,
+                :headers => { "api-secret" => secret },
+                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
+            },
+            method(:onStepTotalsReceive)
+        );
+    }
+
+    function onStepTotalsReceive(responseCode as Number, data as Dictionary or String or Null) as Void {
+        if (responseCode != 200 || data == null || !(data instanceof Dictionary)) {
+            return;
+        }
+        mStepTotals = data as Dictionary;
     }
 
     hidden function toNum(val) as Number {
@@ -24,8 +72,44 @@ class NextStepFieldView extends WatchUi.DataField {
         return 0;
     }
 
+    hidden function resolveStepName(stepInfo as Activity.WorkoutStepInfo) as String {
+        var name = "";
+        try {
+            if (stepInfo has :notes && stepInfo.notes != null) {
+                var n = stepInfo.notes.toString();
+                if (n.length() > 0) { name = n.toUpper(); }
+            }
+        } catch (ex) {}
+        if (name.length() == 0) {
+            try {
+                if (stepInfo has :name && stepInfo.name != null) {
+                    var n = stepInfo.name.toString();
+                    if (n.length() > 0) { name = n.toUpper(); }
+                }
+            } catch (ex) {}
+        }
+        if (name.length() == 0) {
+            name = intensityLabel(stepInfo.intensity);
+        }
+        return name;
+    }
+
     function compute(info as Activity.Info) as Void {
         try {
+            // Track current step name changes for rep counting
+            if (Activity has :getCurrentWorkoutStep) {
+                var currentInfo = Activity.getCurrentWorkoutStep();
+                if (currentInfo != null) {
+                    var currentName = resolveStepName(currentInfo);
+                    if (!currentName.equals(mPrevCurrentName)) {
+                        var count = mStepCounts.hasKey(currentName) ? (mStepCounts[currentName] as Number) + 1 : 1;
+                        mStepCounts[currentName] = count;
+                        mPrevCurrentName = currentName;
+                    }
+                }
+            }
+
+            // Resolve next step info
             if (!(Activity has :getNextWorkoutStep)) { return; }
             var stepInfo = Activity.getNextWorkoutStep();
             if (stepInfo == null) {
@@ -37,28 +121,18 @@ class NextStepFieldView extends WatchUi.DataField {
             }
             mHasStep = true;
 
-            // Step name: notes first (Garmin Connect), then name (Intervals.icu), then intensity
-            mStepName = "";
-            var step = stepInfo.step;
-            try {
-                if (stepInfo has :notes && stepInfo.notes != null) {
-                    var n = stepInfo.notes.toString();
-                    if (n.length() > 0) { mStepName = n.toUpper(); }
-                }
-            } catch (ex2) {}
-            if (mStepName.length() == 0) {
-                try {
-                    if (stepInfo has :name && stepInfo.name != null) {
-                        var n = stepInfo.name.toString();
-                        if (n.length() > 0) { mStepName = n.toUpper(); }
-                    }
-                } catch (ex3) {}
-            }
-            if (mStepName.length() == 0) {
-                mStepName = intensityLabel(stepInfo.intensity);
+            var rawName = resolveStepName(stepInfo);
+
+            // Next step rep = completed count + 1 (the upcoming one)
+            if (mStepTotals.hasKey(rawName)) {
+                var completed = mStepCounts.hasKey(rawName) ? (mStepCounts[rawName] as Number) : 0;
+                mStepName = rawName + " " + (completed + 1) + "/" + toNum(mStepTotals[rawName]);
+            } else {
+                mStepName = rawName;
             }
 
             // HR range
+            var step = stepInfo.step;
             if (step has :targetType && step has :targetValueLow && step has :targetValueHigh) {
                 var tt = toNum(step.targetType);
                 if (tt == 1) {
