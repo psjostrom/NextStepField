@@ -11,7 +11,6 @@ class NextStepFieldView extends WatchUi.DataField {
     hidden var mColor as Number = 0xFFFFFF;
     hidden var mHasStep as Boolean = false;
 
-
     function initialize() {
         DataField.initialize();
     }
