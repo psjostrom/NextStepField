@@ -1,5 +1,4 @@
 import Toybox.Activity;
-import Toybox.Communications;
 import Toybox.Graphics;
 import Toybox.Lang;
 import Toybox.WatchUi;
@@ -12,62 +11,13 @@ class NextStepFieldView extends WatchUi.DataField {
     hidden var mColor as Number = 0xFFFFFF;
     hidden var mHasStep as Boolean = false;
 
-    // Rep tracking — we track CURRENT step transitions to count reps,
-    // then display the NEXT step's upcoming rep number.
-    hidden var mStepTotals as Dictionary = {};
-    hidden var mStepCounts as Dictionary = {};
-    hidden var mPrevCurrentName as String = "";
-
-    // Fuel flash (visual only — StepField owns vibrate/tone)
-    hidden const FUEL_INTERVAL_MS = 600000; // 10 min
-    hidden var mLastFuelAlert as Number = 0;
-    hidden var mFuelFlashUntil as Number = 0;
 
     function initialize() {
         DataField.initialize();
     }
 
-    function onTimerStart() as Void {
-        fetchStepTotals();
-    }
-
-    function onTimerResume() as Void {
-        if (mStepTotals.isEmpty()) {
-            fetchStepTotals();
-        }
-    }
-
     function onTimerReset() as Void {
         mHasStep = false;
-        mStepTotals = {};
-        mStepCounts = {};
-        mPrevCurrentName = "";
-        mLastFuelAlert = 0;
-        mFuelFlashUntil = 0;
-    }
-
-    hidden function fetchStepTotals() as Void {
-        var url = Secrets.SPRINGA_URL;
-        var secret = Secrets.SPRINGA_SECRET;
-        if (url.equals("") || secret.equals("")) { return; }
-
-        Communications.makeWebRequest(
-            url + "/api/workout-steps",
-            null,
-            {
-                :method => Communications.HTTP_REQUEST_METHOD_GET,
-                :headers => { "api-secret" => secret },
-                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
-            },
-            method(:onStepTotalsReceive)
-        );
-    }
-
-    function onStepTotalsReceive(responseCode as Number, data as Dictionary or String or Null) as Void {
-        if (responseCode != 200 || data == null || !(data instanceof Dictionary)) {
-            return;
-        }
-        mStepTotals = data as Dictionary;
     }
 
     hidden function toNum(val) as Number {
@@ -103,19 +53,6 @@ class NextStepFieldView extends WatchUi.DataField {
 
     function compute(info as Activity.Info) as Void {
         try {
-            // Track current step name changes for rep counting
-            if (Activity has :getCurrentWorkoutStep) {
-                var currentInfo = Activity.getCurrentWorkoutStep();
-                if (currentInfo != null) {
-                    var currentName = resolveStepName(currentInfo);
-                    if (!currentName.equals(mPrevCurrentName)) {
-                        var count = mStepCounts.hasKey(currentName) ? (mStepCounts[currentName] as Number) + 1 : 1;
-                        mStepCounts[currentName] = count;
-                        mPrevCurrentName = currentName;
-                    }
-                }
-            }
-
             // Resolve next step info
             if (!(Activity has :getNextWorkoutStep)) { return; }
             var stepInfo = Activity.getNextWorkoutStep();
@@ -130,13 +67,7 @@ class NextStepFieldView extends WatchUi.DataField {
 
             var rawName = resolveStepName(stepInfo);
 
-            // Next step rep = completed count + 1 (the upcoming one)
-            if (mStepTotals.hasKey(rawName)) {
-                var completed = mStepCounts.hasKey(rawName) ? (mStepCounts[rawName] as Number) : 0;
-                mStepName = rawName + " " + (completed + 1) + "/" + toNum(mStepTotals[rawName]);
-            } else {
-                mStepName = rawName;
-            }
+            mStepName = rawName;
 
             // HR range
             var step = stepInfo.step;
@@ -173,15 +104,6 @@ class NextStepFieldView extends WatchUi.DataField {
             }
 
             mColor = intensityColor(stepInfo.intensity, mStepName);
-
-            // Fuel flash tracking (visual only — no vibrate/tone)
-            if (info.timerTime != null) {
-                var now = toNum(info.timerTime);
-                if (now - mLastFuelAlert >= FUEL_INTERVAL_MS) {
-                    mLastFuelAlert = now;
-                    mFuelFlashUntil = now + 5000;
-                }
-            }
         } catch (ex instanceof Lang.Exception) {
             mHasStep = false;
         }
@@ -199,23 +121,6 @@ class NextStepFieldView extends WatchUi.DataField {
             dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
             dc.drawText(cx, h / 2,
                 Graphics.FONT_TINY, "No next step",
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-            return;
-        }
-
-        // Flash "FUEL" for 5 seconds after alert
-        var showFuel = false;
-        try {
-            var ai = Activity.getActivityInfo();
-            if (ai != null && ai.timerTime != null && mFuelFlashUntil > 0) {
-                showFuel = toNum(ai.timerTime) < mFuelFlashUntil;
-            }
-        } catch (ex4) {}
-
-        if (showFuel) {
-            dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(cx, h / 2,
-                Graphics.FONT_LARGE, "FUEL",
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             return;
         }
