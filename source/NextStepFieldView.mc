@@ -28,6 +28,15 @@ class NextStepFieldView extends WatchUi.DataField {
         return 0;
     }
 
+    hidden function toFlt(val) as Float {
+        if (val instanceof Float) { return val; }
+        if (val instanceof Number) { return val.toFloat(); }
+        if (val instanceof Long) { return val.toFloat(); }
+        if (val instanceof Double) { return val.toFloat(); }
+        if (val instanceof String) { return val.toFloat(); }
+        return 0.0f;
+    }
+
     hidden function resolveStepName(stepInfo as Activity.WorkoutStepInfo) as String {
         var name = "";
         try {
@@ -76,11 +85,11 @@ class NextStepFieldView extends WatchUi.DataField {
                 var hi = step.targetValueHigh;
                 if (lo != null && hi != null) {
                     if (tt == 0) {
-                        // Speed target: values in mm/s, convert to pace min:sec/km
-                        var loMms = toNum(lo);
-                        var hiMms = toNum(hi);
-                        if (loMms > 0 && hiMms > 0) {
-                            mTargetRange = formatPace(hiMms) + "-" + formatPace(loMms);
+                        // Speed target: values in m/s (Float), convert to pace min:sec/km
+                        var loSpd = toFlt(lo);
+                        var hiSpd = toFlt(hi);
+                        if (loSpd > 0.0f && hiSpd > 0.0f) {
+                            mTargetRange = formatPace(hiSpd) + "-" + formatPace(loSpd);
                         } else {
                             mTargetRange = "";
                         }
@@ -166,9 +175,8 @@ class NextStepFieldView extends WatchUi.DataField {
         return m + ":" + s.format("%02d");
     }
 
-    hidden function formatPace(mms as Number) as String {
-        // Convert mm/s to pace min:sec per km
-        var paceSeconds = 1000000 / mms;
+    hidden function formatPace(speedMs as Float) as String {
+        var paceSeconds = (1000.0f / speedMs).toNumber();
         var m = paceSeconds / 60;
         var s = paceSeconds % 60;
         return m + ":" + s.format("%02d");
