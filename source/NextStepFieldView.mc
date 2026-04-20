@@ -1,6 +1,7 @@
 import Toybox.Activity;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.WatchUi;
 
 class NextStepFieldView extends WatchUi.DataField {
@@ -176,7 +177,7 @@ class NextStepFieldView extends WatchUi.DataField {
     }
 
     hidden function formatPace(speedMs as Float) as String {
-        var paceSeconds = (1000.0f / speedMs).toNumber();
+        var paceSeconds = Math.round(1000.0f / speedMs).toNumber();
         var m = paceSeconds / 60;
         var s = paceSeconds % 60;
         return m + ":" + s.format("%02d");
